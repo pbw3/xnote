@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#111827" />
+    <title>Notes PWA</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="stylesheet" href="/styles.css" />
+</head>
+
+<body>
+    <header class="topbar">
+        <div class="topbar__left">
+            <div class="brand">Notes</div>
+            <div id="syncBadge" class="badge" title="Phase 1: local only">Local</div>
+        </div>
+        <div class="topbar__right">
+            <button id="newBtn" class="btn btn--primary" type="button">New</button>
+        </div>
+    </header>
+
+    <main class="layout">
+        <section class="panel panel--list">
+            <div class="panel__title">All Notes</div>
+            <div class="searchRow">
+                <input id="searchInput" class="input" type="search" placeholder="Search notes..." autocomplete="off" />
+            </div>
+            <div id="notesList" class="list" aria-label="Notes list"></div>
+            <div id="emptyState" class="emptyState" hidden>
+                No notes yet. Click <b>New</b> to create one.
+            </div>
+        </section>
+
+        <section class="panel panel--detail">
+            <div class="panel__title">Note</div>
+
+            <div id="detailView" class="detail" hidden>
+                <div class="detail__header">
+                    <h2 id="detailTitle" class="detail__title"></h2>
+                    <div class="detail__meta">
+                        <span id="detailUpdated"></span>
+                    </div>
+                </div>
+                <div id="detailBody" class="detail__body"></div>
+                <div class="row row--actions">
+                    <button id="editBtn" class="btn" type="button">Edit</button>
+                    <button id="deleteBtn" class="btn btn--danger" type="button">Delete</button>
+                </div>
+            </div>
+
+            <div id="editorView" class="editor" hidden>
+                <label class="label">
+                    Title
+                    <input id="titleInput" class="input" type="text" maxlength="200" />
+                </label>
+
+                <label class="label">
+                    Body
+                    <textarea id="bodyInput" class="textarea" rows="12"></textarea>
+                </label>
+
+                <div class="row row--actions">
+                    <button id="saveBtn" class="btn btn--primary" type="button">Save</button>
+                    <button id="cancelBtn" class="btn" type="button">Cancel</button>
+                </div>
+            </div>
+
+            <div id="welcomeView" class="emptyState">
+                Select a note from the list, or click <b>New</b>.
+            </div>
+        </section>
+    </main>
+
+    <script type="module" src="/src/app.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,15 @@
+{
+    "name": "Notes PWA",
+    "short_name": "Notes",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#0b1220",
+    "theme_color": "#111827",
+    "icons": [
+        {
+            "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='192' height='192' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='36' fill='%23111827'/%3E%3Cpath d='M54 52h84v10H54zM54 76h84v10H54zM54 100h58v10H54zM54 124h84v10H54z' fill='%23e5e7eb'/%3E%3C/svg%3E",
+            "sizes": "192x192",
+            "type": "image/svg+xml"
+        }
+    ]
+}
