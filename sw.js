@@ -1,4 +1,4 @@
-const cacheName = 'notes-pwa-v1';
+const cacheName = 'notes-pwa-v2';
 const appShell = [
     '/',
     '/index.html',
@@ -7,7 +7,10 @@ const appShell = [
     '/src/app.js',
     '/src/db.js',
     '/src/ui.js',
-    '/src/util.js'
+    '/src/util.js',
+    '/src/sync/googleAuth.js',
+    '/src/sync/driveApi.js',
+    '/src/sync/syncEngine.js'
 ];
 
 self.addEventListener('install', (event) => {

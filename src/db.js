@@ -1,8 +1,11 @@
 const dbName = 'notesDb';
-const dbVersion = 1;
+const dbVersion = 2;
 
 const stores = {
-    notes: 'notes'
+    notes: 'notes',
+    outbox: 'outbox',
+    driveMap: 'driveMap',
+    syncMeta: 'syncMeta'
 };
 
 /**
@@ -21,6 +24,19 @@ export function openDb() {
                 store.createIndex('updatedAtMs', 'updatedAtMs', { unique: false });
                 store.createIndex('deletedAtMs', 'deletedAtMs', { unique: false });
             }
+
+            if (!db.objectStoreNames.contains(stores.outbox)) {
+                const store = db.createObjectStore(stores.outbox, { keyPath: 'opId' });
+                store.createIndex('queuedAtMs', 'queuedAtMs', { unique: false });
+            }
+
+            if (!db.objectStoreNames.contains(stores.driveMap)) {
+                db.createObjectStore(stores.driveMap, { keyPath: 'noteId' });
+            }
+
+            if (!db.objectStoreNames.contains(stores.syncMeta)) {
+                db.createObjectStore(stores.syncMeta, { keyPath: 'key' });
+            }
         };
 
         req.onsuccess = () => resolve(req.result);
@@ -31,12 +47,13 @@ export function openDb() {
 /**
  * Run a transaction and return the object store.
  * @param {IDBDatabase} db - DB instance.
+ * @param {string} storeName - Store name.
  * @param {'readonly'|'readwrite'} mode - Transaction mode.
  * @returns {IDBObjectStore} Store object.
  */
-export function getNotesStore(db, mode) {
-    const tx = db.transaction(stores.notes, mode);
-    return tx.objectStore(stores.notes);
+function getStore(db, storeName, mode) {
+    const tx = db.transaction(storeName, mode);
+    return tx.objectStore(storeName);
 }
 
 /**
@@ -46,7 +63,7 @@ export function getNotesStore(db, mode) {
  */
 export function listNotes(db) {
     return new Promise((resolve, reject) => {
-        const store = getNotesStore(db, 'readonly');
+        const store = getStore(db, stores.notes, 'readonly');
         const req = store.getAll();
 
         req.onsuccess = () => {
@@ -67,7 +84,7 @@ export function listNotes(db) {
  */
 export function getNote(db, noteId) {
     return new Promise((resolve, reject) => {
-        const store = getNotesStore(db, 'readonly');
+        const store = getStore(db, stores.notes, 'readonly');
         const req = store.get(noteId);
 
         req.onsuccess = () => resolve(req.result || null);
@@ -83,7 +100,7 @@ export function getNote(db, noteId) {
  */
 export function putNote(db, note) {
     return new Promise((resolve, reject) => {
-        const store = getNotesStore(db, 'readwrite');
+        const store = getStore(db, stores.notes, 'readwrite');
         const req = store.put(note);
 
         req.onsuccess = () => resolve();
@@ -104,4 +121,126 @@ export async function softDeleteNote(db, noteId, deletedAtMs) {
     note.deletedAtMs = deletedAtMs;
     note.updatedAtMs = deletedAtMs;
     await putNote(db, note);
+}
+
+/**
+ * Add an outbox operation.
+ * @param {IDBDatabase} db - DB instance.
+ * @param {{opId:string,type:'upsert'|'delete',noteId:string,queuedAtMs:number}} op - Operation.
+ * @returns {Promise<void>} Resolves when done.
+ */
+export function enqueueOp(db, op) {
+    return new Promise((resolve, reject) => {
+        const store = getStore(db, stores.outbox, 'readwrite');
+        const req = store.put(op);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+    });
+}
+
+/**
+ * List outbox operations in queued order.
+ * @param {IDBDatabase} db - DB instance.
+ * @returns {Promise<Array<object>>} Outbox ops.
+ */
+export function listOps(db) {
+    return new Promise((resolve, reject) => {
+        const store = getStore(db, stores.outbox, 'readonly');
+        const idx = store.index('queuedAtMs');
+        const req = idx.getAll();
+
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+/**
+ * Remove an outbox op.
+ * @param {IDBDatabase} db - DB instance.
+ * @param {string} opId - Operation id.
+ * @returns {Promise<void>} Resolves when done.
+ */
+export function deleteOp(db, opId) {
+    return new Promise((resolve, reject) => {
+        const store = getStore(db, stores.outbox, 'readwrite');
+        const req = store.delete(opId);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+    });
+}
+
+/**
+ * Get Drive mapping for a note.
+ * @param {IDBDatabase} db - DB instance.
+ * @param {string} noteId - Note id.
+ * @returns {Promise<{noteId:string,driveFileId:string,md5?:string}|null>} Mapping or null.
+ */
+export function getDriveMap(db, noteId) {
+    return new Promise((resolve, reject) => {
+        const store = getStore(db, stores.driveMap, 'readonly');
+        const req = store.get(noteId);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+/**
+ * Set Drive mapping for a note.
+ * @param {IDBDatabase} db - DB instance.
+ * @param {{noteId:string,driveFileId:string,md5?:string}} mapping - Mapping.
+ * @returns {Promise<void>} Resolves when done.
+ */
+export function putDriveMap(db, mapping) {
+    return new Promise((resolve, reject) => {
+        const store = getStore(db, stores.driveMap, 'readwrite');
+        const req = store.put(mapping);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+    });
+}
+
+/**
+ * Delete Drive mapping for a note.
+ * @param {IDBDatabase} db - DB instance.
+ * @param {string} noteId - Note id.
+ * @returns {Promise<void>} Resolves when done.
+ */
+export function deleteDriveMap(db, noteId) {
+    return new Promise((resolve, reject) => {
+        const store = getStore(db, stores.driveMap, 'readwrite');
+        const req = store.delete(noteId);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+    });
+}
+
+/**
+ * Read a sync meta value.
+ * @param {IDBDatabase} db - DB instance.
+ * @param {string} key - Meta key.
+ * @returns {Promise<any>} Value or null.
+ */
+export function getMeta(db, key) {
+    return new Promise((resolve, reject) => {
+        const store = getStore(db, stores.syncMeta, 'readonly');
+        const req = store.get(key);
+        req.onsuccess = () => resolve(req.result?.value ?? null);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+/**
+ * Write a sync meta value.
+ * @param {IDBDatabase} db - DB instance.
+ * @param {string} key - Meta key.
+ * @param {any} value - Meta value.
+ * @returns {Promise<void>} Resolves when done.
+ */
+export function setMeta(db, key, value) {
+    return new Promise((resolve, reject) => {
+        const store = getStore(db, stores.syncMeta, 'readwrite');
+        const req = store.put({ key, value });
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+    });
 }

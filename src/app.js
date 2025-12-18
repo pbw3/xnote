@@ -1,6 +1,16 @@
-import { openDb, listNotes, getNote, putNote, softDeleteNote } from './db.js';
+import { openDb, listNotes, getNote, putNote, softDeleteNote, enqueueOp } from './db.js';
 import { createId } from './util.js';
 import { el, renderList, showDetail, showEditor, showWelcome, readEditor } from './ui.js';
+
+import { initTokenClient, getAccessToken } from './sync/googleAuth.js';
+import { syncNow } from './sync/syncEngine.js';
+
+// ✅ Fill these in from Google Cloud Console:
+const googleConfig = {
+    clientId: '1063047704198-gblidf0oc4c0s14dluki9qbsm3jsf0s8.apps.googleusercontent.com',
+    apiKey: 'AIzaSyB-4bb8-o9FbS3MaJh1yt644FL-Y5uTTxI',
+    scope: 'https://www.googleapis.com/auth/drive.appdata'
+};
 
 let db;
 let notesCache = [];
@@ -17,8 +27,11 @@ async function initApp() {
     registerServiceWorker();
     wireEvents();
 
+    await initTokenClient({ clientId: googleConfig.clientId, scope: googleConfig.scope });
+
     await refreshList();
     showWelcome();
+    setSyncBadge('Local');
 }
 
 /**
@@ -46,6 +59,17 @@ function wireEvents() {
     el('cancelBtn').addEventListener('click', onCancel);
 
     el('searchInput').addEventListener('input', onSearch);
+
+    el('syncBtn').addEventListener('click', onSync);
+}
+
+/**
+ * Set sync badge label.
+ * @param {string} text - Badge text.
+ * @returns {void}
+ */
+function setSyncBadge(text) {
+    el('syncBadge').textContent = text;
 }
 
 /**
@@ -94,6 +118,22 @@ async function selectNote(noteId) {
 }
 
 /**
+ * Add an outbox operation for a note.
+ * @param {'upsert'|'delete'} type - Operation type.
+ * @param {string} noteId - Note id.
+ * @returns {Promise<void>} Resolves when done.
+ */
+async function queueOp(type, noteId) {
+    const op = {
+        opId: createId(),
+        type,
+        noteId,
+        queuedAtMs: Date.now()
+    };
+    await enqueueOp(db, op);
+}
+
+/**
  * Create a new note and open editor.
  * @returns {Promise<void>} Resolves when done.
  */
@@ -110,6 +150,8 @@ async function onNew() {
     };
 
     await putNote(db, note);
+    await queueOp('upsert', noteId);
+
     await refreshList();
 
     activeNoteId = noteId;
@@ -152,12 +194,15 @@ async function onSave() {
     note.updatedAtMs = Date.now();
 
     await putNote(db, note);
+    await queueOp('upsert', note.noteId);
+
     editingNoteId = null;
 
     activeNoteId = note.noteId;
     await refreshList();
     showDetail(note);
     renderCurrentList();
+    setSyncBadge('Pending');
 }
 
 /**
@@ -169,11 +214,6 @@ async function onCancel() {
 
     const noteId = editingNoteId;
     editingNoteId = null;
-
-    if (!noteId) {
-        showWelcome();
-        return;
-    }
 
     const note = await getNote(db, noteId);
     if (!note || note.deletedAtMs) {
@@ -190,7 +230,7 @@ async function onCancel() {
 }
 
 /**
- * Delete the active note (soft delete).
+ * Delete the active note (soft delete + outbox delete).
  * @returns {Promise<void>} Resolves when done.
  */
 async function onDelete() {
@@ -204,9 +244,12 @@ async function onDelete() {
     editingNoteId = null;
 
     await softDeleteNote(db, noteId, Date.now());
+    await queueOp('delete', noteId);
+
     await refreshList();
     showWelcome();
     renderCurrentList();
+    setSyncBadge('Pending');
 }
 
 /**
@@ -215,6 +258,35 @@ async function onDelete() {
  */
 function onSearch() {
     renderCurrentList();
+}
+
+/**
+ * Sync handler: tries silent token first, then prompts if needed.
+ * @returns {Promise<void>} Resolves when done.
+ */
+async function onSync() {
+    setSyncBadge('Syncing…');
+
+    try {
+        let accessToken = null;
+
+        // Try non-interactive first.
+        try {
+            accessToken = await getAccessToken({ interactive: false });
+        } catch {
+            // Then interactive consent.
+            accessToken = await getAccessToken({ interactive: true });
+        }
+
+        const stats = await syncNow(db, { accessToken, apiKey: googleConfig.apiKey });
+        await refreshList();
+
+        setSyncBadge(`Synced (${stats.pushed}/${stats.pulled})`);
+    } catch (e) {
+        console.error(e);
+        setSyncBadge('Sync error');
+        alert(`Sync failed: ${e?.message || e}`);
+    }
 }
 
 initApp();
