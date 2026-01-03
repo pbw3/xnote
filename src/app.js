@@ -41,7 +41,7 @@ async function initApp() {
 function registerServiceWorker() {
     if (!('serviceWorker' in navigator)) return;
 
-    navigator.serviceWorker.register('/sw.js').catch(() => {
+    navigator.serviceWorker.register('./sw.js').catch(() => {
         // Non-fatal: app still works without SW.
     });
 }
